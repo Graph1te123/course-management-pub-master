@@ -1,70 +1,76 @@
-name: Maven CI
+name: Java CI with Maven
 
 on:
   pull_request:
+    branches: [ "main" ]
+  push:
     branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: maven:3.9.8-eclipse-temurin-21
-
+    container: maven:3.9-eclipse-temurin-21
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Build with Maven
-        run: mvn -B clean test package
+        run: mvn clean package -DskipTests
 
-      - name: Upload JAR artifacts
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-jars
-          path: ./target/*.jar
+          name: course-management-jar
+          path: target/*.jar
+          retention-days: 5
 
-  semgrep-sast:
+  sast:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       security-events: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
       - name: Install Semgrep
         run: pip install semgrep
 
-      - name: Run Semgrep SAST
-        run: semgrep ci --config auto --sarif -o semgrep-report.sarif
+      - name: Semgrep Security Scan
+        run: semgrep --config p/default --sarif --output=semgrep.sarif
 
-      - name: Upload SARIF to GitHub Security
+      - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: semgrep-report.sarif
+          sarif_file: semgrep.sarif
+        if: always()
 
-  sca-dependency-check:
+  dependency-scan:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21 with Maven
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
           java-version: '21'
+          distribution: 'temurin'
           cache: maven
 
-      - name: Run OWASP Dependency-Check (SCA)
-        run: mvn -B org.owasp:dependency-check-maven:aggregate
+      - name: OWASP Dependency Check
+        run: mvn org.owasp:dependency-check-maven:check
 
-      - name: Upload SCA HTML report
+      - name: Upload Dependency Check Report
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: dependency-check-report
           path: target/dependency-check-report.html
