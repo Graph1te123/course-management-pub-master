@@ -1,11 +1,5 @@
 name: Java CI with Maven and Security
 
-on:
-  pull_request:
-    branches: [ "main" ]
-  push:
-    branches: [ "main" ]
-
 # Разрешаем доступ к секретам для workflow
 permissions:
   contents: read
@@ -16,18 +10,18 @@ jobs:
   secrets-detection:
     runs-on: ubuntu-latest
     container: python:3.11-slim
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Полная история для сканирования
-
+      
       - name: Install dependencies
         run: |
           pip install trufflehog jq
           apt-get update && apt-get install -y git
-
+      
       - name: Run TruffleHog Secrets Detection
         id: trufflehog
         run: |
@@ -54,94 +48,94 @@ jobs:
           # Анализируем результаты
           if [ -s "trufflehog-report.json" ]; then
             SECRETS_COUNT=$(jq length trufflehog-report.json 2>/dev/null || echo "0")
-          
+            
             if [ "$SECRETS_COUNT" -gt "0" ]; then
-              echo "❌❌❌ CRITICAL: Found $SECRETS_COUNT secrets in the code!"
+              echo "CRITICAL: Found $SECRETS_COUNT secrets in the code!"
               echo ""
               echo "=== SECRETS DETECTED ==="
-          
+              
               # Красивый вывод
               jq -r '.[] | "• Type: \(.reason)\n  File: \(.path)\n  Line: \(.line)\n  Secret: \(.stringsFound[0])\n"' trufflehog-report.json
-          
+              
               echo ""
               echo "##[error] Pipeline failed due to detected secrets"
               echo "##[error] Please remove these secrets before proceeding"
-          
+              
               # Для PR добавляем комментарий
               if [ "${{ github.event_name }}" = "pull_request" ]; then
                 SECRETS_LIST=$(jq -r '.[] | "**Type:** \(.reason)  \n**File:** \(.path):\(.line)  \n**Secret:** \(.stringsFound[0] | .[0:50])...  \n---"' trufflehog-report.json)
-          
+                
                 echo "SECRETS_FOUND=true" >> $GITHUB_OUTPUT
-          
+                
                 # Комментируем в PR
                 gh pr comment ${{ github.event.pull_request.number }} \
-                  --body "❌ **Secrets detected in code!**  
-
-The following secrets were found:
-
-  $SECRETS_LIST
-
+                  --body "**Secrets detected in code!**  
+                  
+The following secrets were found:  
+                  
+$SECRETS_LIST  
+                  
 Please remove all secrets before merging this PR." || echo "Note: Unable to post comment to PR"
-                                                                    fi
-                                                                    
-                                                                    exit 1
-                                                                    else
-                                                                    echo "✅ No secrets found"
-                                                                    fi
-                                                                    else
-                                                                    echo "✅ No secrets found"
-                                                                    fi
-                                                                    
-                                                                    - name: Upload secrets report
-                                                                    if: always()
-                                                                    uses: actions/upload-artifact@v4
-                                                                    with:
-                                                                      name: trufflehog-report
-                                                                      path: trufflehog-report.json
-                                                                      retention-days: 7
+              fi
+              
+              exit 1
+            else
+              echo "No secrets found"
+            fi
+          else
+            echo "No secrets found"
+          fi
+      
+      - name: Upload secrets report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trufflehog-report
+          path: trufflehog-report.json
+          retention-days: 7
 
   # ==================== BUILD ====================
-                                                                    build:
-                                                                      runs-on: ubuntu-latest
-                                                                      container: maven:3.9-eclipse-temurin-21
-                                                                      needs: [secrets-detection]  # Зависит от успешной проверки секретов
-
-                                                                      steps:
-                                                                        - name: Checkout code
-                                                                          uses: actions/checkout@v4
-
-                                                                        - name: Build with Maven
-                                                                          run: mvn clean package -DskipTests
-
-                                                                        - name: Upload build artifact
-                                                                          uses: actions/upload-artifact@v4
-                                                                          with:
-                                                                            name: course-management-jar
-                                                                            path: target/*.jar
-                                                                            retention-days: 5
+  build:
+    runs-on: ubuntu-latest
+    container: maven:3.9-eclipse-temurin-21
+    needs: [secrets-detection]  # Зависит от успешной проверки секретов
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-management-jar
+          path: target/*.jar
+          retention-days: 5
 
   # ==================== SAST ====================
-                                                                    sast:
-                                                                      needs: build
-                                                                      runs-on: ubuntu-latest
-
-                                                                      steps:
-                                                                        - name: Checkout code
-                                                                          uses: actions/checkout@v4
-
-                                                                        - name: Set up Python
-                                                                          uses: actions/setup-python@v4
-                                                                          with:
-                                                                            python-version: '3.x'
-
-                                                                        - name: Install Semgrep
-                                                                          run: pip install semgrep
-
-                                                                        - name: Semgrep Security Scan
-                                                                          run: semgrep --config p/default --sarif --output=semgrep.sarif
-
-                                                                        - name: Upload SARIF file
-                                                                          uses: github/codeql-action/upload-sarif@v4
-                                                                          with:
-                                                                            sarif_file: semgrep.sarif
-                                                                          if: always()
+  sast:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install Semgrep
+        run: pip install semgrep
+      
+      - name: Semgrep Security Scan
+        run: semgrep --config p/default --sarif --output=semgrep.sarif
+      
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+        if: always()
