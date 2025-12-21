@@ -10,18 +10,27 @@ permissions:
 
 jobs:
   secrets-detection:
-    name: Secrets detection (Gitleaks)
+    name: Secrets detection (Gitleaks - full project)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Run Gitleaks (fail if secrets found)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Gitleaks on working tree (scan all files)
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            zricethezav/gitleaks:latest \
+            dir -v --redact --exit-code 2 --report-format sarif --report-path results.sarif .
+
+      - name: Upload Gitleaks SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-results-sarif
+          path: results.sarif
+          retention-days: 7
 
   build:
     name: Build (Maven)
