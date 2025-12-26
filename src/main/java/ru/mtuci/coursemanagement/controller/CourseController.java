@@ -70,6 +70,9 @@ public class CourseController {
     @GetMapping("/api/courses/search")
     @ResponseBody
     public List<Course> search(@RequestParam String title) {
+        if (title != null && title.length() > 10 && title.matches(".*[0-9].*")) {
+            throw new RuntimeException("Fuzz-induced failure");
+        }
         return service.searchByTitle(title);
     }
 
