@@ -1,0 +1,73 @@
+name: Container Security
+
+on:
+  push:
+    branches: [ main, feature/github-container-security ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: course-management
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build JAR
+        run: mvn -q clean package
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'   # если найдены уязвимости — job упадёт
+
+  push-image:
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+
+    if: success()  # публикуем образ ТОЛЬКО если сканирование прошло
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image from previous job and push with tag
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          FINAL_TAG=latest
+          docker pull $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+          docker tag $REGISTRY/$IMAGE_NAME:$IMAGE_TAG $REGISTRY/$IMAGE_NAME:$FINAL_TAG
+          docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+          docker push $REGISTRY/$IMAGE_NAME:$FINAL_TAG
