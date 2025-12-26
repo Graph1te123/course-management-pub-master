@@ -2,8 +2,9 @@ name: container-scan-and-push
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/container-security" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -13,10 +14,13 @@ permissions:
 jobs:
   build_scan_push:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set image name
+
         run: echo "IMAGE=ghcr.io/${{ github.repository_owner }}/course-management:${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Login to GHCR
@@ -26,10 +30,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image (local)
+      - name: Build application JAR
+        run: mvn -q clean package
+
+      - name: Build Docker image (local)
         run: docker build -t $IMAGE .
 
-      - name: Trivy scan (fail on HIGH/CRITICAL)
+      - name: Trivy scan (fail on HIGH/CRITICAL/MEDIUM)
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.IMAGE }}
@@ -40,4 +47,5 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
 
       - name: Push image to GHCR (only if scan passed)
+
         run: docker push $IMAGE
