@@ -19,9 +19,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set image name
-
-        run: echo "IMAGE=ghcr.io/${{ github.repository_owner }}/course-management:${{ github.sha }}" >> $GITHUB_ENV
+      - name: Set image name (lowercase owner)
+        run: |
+          OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=ghcr.io/${OWNER_LC}/course-management:${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -36,7 +37,6 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-
       - name: Build application JAR
         run: mvn -q clean package
 
@@ -48,11 +48,10 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE }}
           format: table
-          exit-code: '1'
+          exit-code: '1'          # при уязвимостях job упадёт, push не выполнится
           ignore-unfixed: false
           vuln-type: os,library
           severity: CRITICAL,HIGH,MEDIUM
 
       - name: Push image to GHCR (only if scan passed)
-
         run: docker push $IMAGE
